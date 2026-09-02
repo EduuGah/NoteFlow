@@ -3,6 +3,7 @@ import { AppLayout } from './layouts/AppLayout';
 import { Dashboard } from './pages/Dashboard';
 import { Tasks } from './pages/Tasks';
 import { Habits } from './pages/Habits';
+import { Insights } from './pages/Insights';
 
 function App() {
   return (
@@ -12,7 +13,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="habits" element={<Habits />} />
-          <Route path="insights" element={<div className="p-8 text-neutral-500">Módulo de Insights em construção...</div>} />
+          <Route path="insights" element={<Insights />} />
           <Route path="settings" element={<div className="p-8 text-neutral-500">Configurações em construção...</div>} />
         </Route>
       </Routes>
