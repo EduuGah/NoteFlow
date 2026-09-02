@@ -28,6 +28,26 @@ export type Task = {
   created_at: string;
 };
 
+export type HabitFrequency = 'daily' | 'weekdays' | 'weekly';
+
+export type Habit = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  frequency: HabitFrequency;
+  xp_reward: number;
+  current_streak: number;
+  created_at: string;
+};
+
+export type HabitLog = {
+  id: string;
+  habit_id: string;
+  user_id: string;
+  completed_at: string;
+};
+
 export type TaskExecutionLog = {
   id: string;
   task_id: string;

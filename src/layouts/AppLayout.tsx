@@ -1,8 +1,10 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { LayoutDashboard, CheckSquare, BarChart2, Settings, Target } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useProfileStore } from '../store/useProfileStore';
 
 export function AppLayout() {
+  const { level } = useProfileStore();
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Tarefas', path: '/tasks', icon: CheckSquare },
@@ -42,7 +44,7 @@ export function AppLayout() {
           ))}
         </nav>
 
-        {/* User Mini Profile Placeholder */}
+        {/* User Mini Profile */}
         <div className="p-4 border-t border-neutral-100">
           <div className="flex items-center gap-3 px-3 py-2">
             <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-xs font-medium text-neutral-600">
@@ -50,7 +52,7 @@ export function AppLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-neutral-900 truncate">Usuário</p>
-              <p className="text-xs text-neutral-500 truncate">Nível 1</p>
+              <p className="text-xs text-neutral-500 truncate">Nível {level}</p>
             </div>
           </div>
         </div>
