@@ -1,147 +1,183 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import { TaskPriority, TaskDifficulty } from '../../../types/database.types';
+/**
+ * Criação de tarefa (seção 50, Quick Add).
+ *
+ * "Não obrigar o usuário a preencher 15 campos." Título, data e horário ficam visíveis;
+ * dificuldade, prioridade e duração ficam num bloco de detalhes recolhido, com padrões
+ * que já produzem uma tarefa válida. Quem quiser só o título aperta Enter.
+ *
+ * A duração deixou de ser `60` fixo no código (defeito D10): ela entra na fórmula de XP,
+ * então gravar 60 para todo mundo distorcia a pontuação de toda tarefa criada.
+ */
+
+import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import type { TaskDifficulty, TaskPriority } from '../../../types/domain';
 import { useTaskStore } from '../../../store/useTaskStore';
+import { toast } from '../../../store/useToastStore';
+import {
+  DIFFICULTY_OPTIONS,
+  DURATION_OPTIONS,
+  PRIORITY_OPTIONS,
+} from '../../../constants/task';
+import { calculateTaskXp } from '../../../domain/xp';
+import { today } from '../../../lib/date';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import { ChoiceGroup, SelectField, TextAreaField, TextField } from '../../../components/ui/Field';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** Data pré-selecionada quando a criação parte de um dia específico da agenda. */
+  defaultDate?: string;
 }
 
-export function CreateTaskModal({ isOpen, onClose }: Props) {
-  const addTask = useTaskStore(state => state.addTask);
-  
+export function CreateTaskModal({ isOpen, onClose, defaultDate }: Props) {
+  const createTask = useTaskStore((state) => state.createTask);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState('09:00');
+  const [date, setDate] = useState(defaultDate ?? today());
+  const [time, setTime] = useState('');
+  const [duration, setDuration] = useState<number | null>(null);
   const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [difficulty, setDifficulty] = useState<TaskDifficulty>('easy');
+  const [difficulty, setDifficulty] = useState<TaskDifficulty>('medium');
+  const [showDetails, setShowDetails] = useState(false);
 
-  if (!isOpen) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    addTask({
-      title,
-      description: description || null,
-      scheduled_date: date || null,
-      scheduled_time: time || null,
-      duration_estimated: 60, // Default for now
-      priority,
-      difficulty,
-      category_id: null,
-    });
-    
-    // Reset and close
+  useEffect(() => {
+    if (!isOpen) return;
     setTitle('');
     setDescription('');
+    setDate(defaultDate ?? today());
+    setTime('');
+    setDuration(null);
+    setPriority('medium');
+    setDifficulty('medium');
+    setShowDetails(false);
+  }, [isOpen, defaultDate]);
+
+  // Mostrado antes de salvar para que a regra de pontuação seja visível, e não um número
+  // que aparece do nada depois de concluir.
+  const previewXp = calculateTaskXp({ difficulty, priority, durationMinutes: duration });
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!title.trim()) return;
+
+    createTask({
+      title,
+      description,
+      scheduled_date: date || null,
+      scheduled_time: time || null,
+      duration_estimated: duration,
+      priority,
+      difficulty,
+    });
+
+    toast('Tarefa criada');
     onClose();
-  };
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-neutral-100">
-          <h2 className="text-lg font-semibold text-neutral-900">Nova Tarefa</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors">
-            <X size={20} />
-          </button>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Nova tarefa"
+      size="lg"
+      footer={
+        <>
+          <span className="mr-auto self-center text-xs tabular-nums text-neutral-500">
+            Vale {previewXp} XP
+          </span>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button form="create-task-form" type="submit" disabled={!title.trim()}>
+            Criar
+          </Button>
+        </>
+      }
+    >
+      <form id="create-task-form" onSubmit={handleSubmit} className="space-y-4">
+        <TextField
+          label="O que você vai fazer?"
+          required
+          autoFocus
+          placeholder="Ex.: Treino de pernas"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            label="Data"
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+          <TextField
+            label="Horário"
+            type="time"
+            value={time}
+            hint="Opcional"
+            onChange={(event) => setTime(event.target.value)}
+          />
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-neutral-700">Título</label>
-            <input 
-              type="text" 
-              autoFocus
-              required
-              placeholder="Ex: Treino de pernas"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
+
+        <div className="border-t border-neutral-100 pt-3">
+          <button
+            type="button"
+            onClick={() => setShowDetails((value) => !value)}
+            aria-expanded={showDetails}
+            className="flex w-full items-center justify-between rounded-lg py-1.5 text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+          >
+            Detalhes
+            <ChevronDown
+              size={16}
+              className={showDetails ? 'rotate-180 transition-transform' : 'transition-transform'}
+              aria-hidden="true"
             />
-          </div>
+          </button>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-neutral-700">Data</label>
-              <input 
-                type="date" 
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-neutral-700">Horário</label>
-              <input 
-                type="time" 
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-neutral-700">Dificuldade</label>
-              <select 
+          {showDetails && (
+            <div className="space-y-4 pt-3">
+              <ChoiceGroup
+                label="Dificuldade"
                 value={difficulty}
-                onChange={e => setDifficulty(e.target.value as TaskDifficulty)}
-                className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
-              >
-                <option value="easy">Fácil (10 XP)</option>
-                <option value="medium">Média (25 XP)</option>
-                <option value="hard">Difícil (50 XP)</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-neutral-700">Prioridade</label>
-              <select 
+                options={DIFFICULTY_OPTIONS}
+                onChange={setDifficulty}
+              />
+              <ChoiceGroup
+                label="Prioridade"
                 value={priority}
-                onChange={e => setPriority(e.target.value as TaskPriority)}
-                className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
+                options={PRIORITY_OPTIONS}
+                onChange={setPriority}
+              />
+              <SelectField
+                label="Duração estimada"
+                hint="Usada para comparar planejado e realizado."
+                value={duration === null ? '' : String(duration)}
+                onChange={(event) =>
+                  setDuration(event.target.value === '' ? null : Number(event.target.value))
+                }
               >
-                <option value="low">Baixa</option>
-                <option value="medium">Média</option>
-                <option value="high">Alta</option>
-                <option value="critical">Crítica</option>
-              </select>
+                {DURATION_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value === null ? '' : option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+              <TextAreaField
+                label="Descrição"
+                rows={2}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Opcional"
+              />
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-neutral-700">Descrição (Opcional)</label>
-            <textarea 
-              rows={2}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Detalhes adicionais..."
-              className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm resize-none"
-            />
-          </div>
-
-          <div className="pt-4 flex justify-end gap-3">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm"
-            >
-              Criar Tarefa
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          )}
+        </div>
+      </form>
+    </Modal>
   );
 }

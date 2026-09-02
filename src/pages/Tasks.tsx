@@ -1,103 +1,150 @@
-import { useState } from 'react';
-import { Plus } from 'lucide-react';
+/**
+ * Lista de tarefas.
+ *
+ * Agrupa por dia em vez de por status: o produto organiza uma rotina, e rotina se lê em
+ * ordem cronológica. Dentro do dia, o que está aberto vem antes do que já foi resolvido,
+ * porque é sobre o que está aberto que o usuário precisa agir.
+ */
+
+import { useMemo, useState } from 'react';
+import { CheckSquare, Plus } from 'lucide-react';
 import { useTaskStore } from '../store/useTaskStore';
+import { compareBySchedule, isOpen } from '../domain/tasks';
+import { addDaysIso, formatRelativeDay, today } from '../lib/date';
+import type { Task } from '../types/domain';
 import { TaskItem } from '../features/tasks/components/TaskItem';
 import { CreateTaskModal } from '../features/tasks/components/CreateTaskModal';
+import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
+import { cn } from '../lib/utils';
+
+type Range = 'today' | 'week' | 'open' | 'all';
+
+const RANGES: { value: Range; label: string }[] = [
+  { value: 'today', label: 'Hoje' },
+  { value: 'week', label: '7 dias' },
+  { value: 'open', label: 'Em aberto' },
+  { value: 'all', label: 'Tudo' },
+];
 
 export function Tasks() {
-  const tasks = useTaskStore(state => state.tasks);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [filter, setFilter] = useState<'today' | 'all'>('today');
+  const tasks = useTaskStore((state) => state.tasks);
+  const [range, setRange] = useState<Range>('today');
+  const [isCreateOpen, setCreateOpen] = useState(false);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayIso = today();
 
-  const filteredTasks = tasks.filter(task => {
-    if (filter === 'today') {
-      return task.scheduled_date === todayStr;
+  const groups = useMemo(() => {
+    const weekEnd = addDaysIso(todayIso, 7);
+
+    const filtered = tasks.filter((task) => {
+      switch (range) {
+        case 'today':
+          return task.scheduled_date === todayIso;
+        case 'week':
+          return (
+            task.scheduled_date !== null &&
+            task.scheduled_date >= todayIso &&
+            task.scheduled_date <= weekEnd
+          );
+        case 'open':
+          return isOpen(task);
+        case 'all':
+          return true;
+      }
+    });
+
+    // Sem data vai para o fim, sob uma chave própria, em vez de sumir da lista.
+    const byDate = new Map<string, Task[]>();
+    for (const task of filtered) {
+      const key = task.scheduled_date ?? '9999-99-99';
+      byDate.set(key, [...(byDate.get(key) ?? []), task]);
     }
-    return true;
-  });
 
-  const activeTasks = filteredTasks.filter(t => t.status === 'planned' || t.status === 'in_progress');
-  const finishedTasks = filteredTasks.filter(t => t.status === 'completed' || t.status === 'failed');
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, items]) => ({
+        date,
+        tasks: [...items].sort((a, b) => {
+          if (isOpen(a) !== isOpen(b)) return isOpen(a) ? -1 : 1;
+          return compareBySchedule(a, b);
+        }),
+      }));
+  }, [tasks, range, todayIso]);
+
+  const total = groups.reduce((sum, group) => sum + group.tasks.length, 0);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="mx-auto max-w-3xl space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-900">Tarefas</h1>
-          <p className="text-neutral-500 mt-1">Gerencie seu planejamento diário.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Tarefas</h1>
+          <p className="mt-0.5 text-sm text-neutral-500">Seu planejamento e o que já foi registrado.</p>
         </div>
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-lg text-sm font-medium hover:bg-neutral-800 transition-colors shadow-sm"
-        >
-          <Plus size={16} /> Nova Tarefa
-        </button>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus size={16} strokeWidth={2} aria-hidden="true" />
+          Nova tarefa
+        </Button>
       </header>
 
-      <div className="flex items-center gap-2 border-b border-neutral-200 pb-px">
-        <button 
-          onClick={() => setFilter('today')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            filter === 'today' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-500 hover:text-neutral-700'
-          }`}
-        >
-          Hoje
-        </button>
-        <button 
-          onClick={() => setFilter('all')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            filter === 'all' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-500 hover:text-neutral-700'
-          }`}
-        >
-          Todas
-        </button>
+      <div
+        role="tablist"
+        aria-label="Período"
+        className="flex gap-1 overflow-x-auto border-b border-neutral-200"
+      >
+        {RANGES.map((option) => (
+          <button
+            key={option.value}
+            role="tab"
+            aria-selected={range === option.value}
+            onClick={() => setRange(option.value)}
+            className={cn(
+              '-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-neutral-900',
+              range === option.value
+                ? 'border-neutral-900 text-neutral-900'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800',
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
 
-      <div className="space-y-6">
-        {activeTasks.length === 0 && finishedTasks.length === 0 ? (
-          <div className="text-center py-12 px-4 border-2 border-dashed border-neutral-200 rounded-xl bg-white">
-            <h3 className="text-lg font-medium text-neutral-900 mb-1">Nenhuma tarefa encontrada</h3>
-            <p className="text-sm text-neutral-500 mb-4">Que tal planejar algo novo agora?</p>
-            <button 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="text-sm font-medium text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-4 py-2 rounded-lg transition-colors"
-            >
-              Criar primeira tarefa
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {activeTasks.length > 0 && (
-              <div className="space-y-3">
-                <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Pendentes</h2>
-                <div className="grid grid-cols-1 gap-3">
-                  {activeTasks.map(task => (
-                    <TaskItem key={task.id} task={task} />
-                  ))}
-                </div>
+      {total === 0 ? (
+        <EmptyState
+          icon={<CheckSquare size={32} strokeWidth={1.5} />}
+          title="Nada por aqui"
+          description={
+            range === 'today'
+              ? 'Você ainda não planejou nada para hoje.'
+              : 'Nenhuma tarefa neste período.'
+          }
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={16} strokeWidth={2} aria-hidden="true" />
+              Criar tarefa
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <section key={group.date} className="space-y-2.5">
+              <h2 className="text-sm font-semibold text-neutral-900">
+                {group.date === '9999-99-99' ? 'Sem data' : formatRelativeDay(group.date)}
+              </h2>
+              <div className="space-y-2.5">
+                {group.tasks.map((task) => (
+                  <TaskItem key={task.id} task={task} />
+                ))}
               </div>
-            )}
+            </section>
+          ))}
+        </div>
+      )}
 
-            {finishedTasks.length > 0 && (
-              <div className="space-y-3">
-                <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Concluídas / Falhas</h2>
-                <div className="grid grid-cols-1 gap-3 opacity-75">
-                  {finishedTasks.map(task => (
-                    <TaskItem key={task.id} task={task} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <CreateTaskModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
-      />
+      <CreateTaskModal isOpen={isCreateOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }

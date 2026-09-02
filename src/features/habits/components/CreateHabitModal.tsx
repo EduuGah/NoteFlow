@@ -1,7 +1,32 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import { HabitFrequency } from '../../../types/database.types';
+/**
+ * Criação de hábito.
+ *
+ * O XP deixou de ser `20` fixo no código: ele agora sai da mesma fórmula das tarefas,
+ * a partir da dificuldade, para que hábito e tarefa sejam comparáveis na progressão.
+ *
+ * A frequência `weekly` exige escolher os dias — um hábito "semanal" sem dias definidos
+ * não tem como ter sequência calculada de forma honesta.
+ */
+
+import { useEffect, useState } from 'react';
+import type { HabitFrequency, TaskDifficulty, Weekday } from '../../../types/domain';
 import { useHabitStore } from '../../../store/useHabitStore';
+import { toast } from '../../../store/useToastStore';
+import { DIFFICULTY_OPTIONS } from '../../../constants/task';
+import { calculateHabitXp } from '../../../domain/xp';
+import { WEEKDAY_LABELS } from '../../../lib/date';
+import { cn } from '../../../lib/utils';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import { ChoiceGroup, TextAreaField, TextField } from '../../../components/ui/Field';
+
+const FREQUENCY_OPTIONS: { value: HabitFrequency; label: string }[] = [
+  { value: 'daily', label: 'Todos os dias' },
+  { value: 'weekdays', label: 'Dias úteis' },
+  { value: 'weekly', label: 'Dias específicos' },
+];
+
+const ALL_WEEKDAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 0];
 
 interface Props {
   isOpen: boolean;
@@ -9,95 +34,143 @@ interface Props {
 }
 
 export function CreateHabitModal({ isOpen, onClose }: Props) {
-  const addHabit = useHabitStore(state => state.addHabit);
-  
+  const createHabit = useHabitStore((state) => state.createHabit);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState<HabitFrequency>('daily');
+  const [weekdays, setWeekdays] = useState<Weekday[]>([1, 3, 5]);
+  const [preferredTime, setPreferredTime] = useState('');
+  const [difficulty, setDifficulty] = useState<TaskDifficulty>('medium');
 
-  if (!isOpen) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    addHabit({
-      title,
-      description: description || null,
-      frequency,
-      xp_reward: 20, // fixed 20 XP for habits per PRD
-    });
-    
+  useEffect(() => {
+    if (!isOpen) return;
     setTitle('');
     setDescription('');
+    setFrequency('daily');
+    setWeekdays([1, 3, 5]);
+    setPreferredTime('');
+    setDifficulty('medium');
+  }, [isOpen]);
+
+  const needsWeekdays = frequency === 'weekly';
+  const canSubmit = title.trim().length > 0 && (!needsWeekdays || weekdays.length > 0);
+
+  function toggleWeekday(day: Weekday) {
+    setWeekdays((current) =>
+      current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
+    );
+  }
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canSubmit) return;
+
+    createHabit({
+      title,
+      description,
+      frequency,
+      weekdays: needsWeekdays ? weekdays : [],
+      preferred_time: preferredTime || null,
+      difficulty,
+    });
+
+    toast('Hábito criado');
     onClose();
-  };
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-neutral-100">
-          <h2 className="text-lg font-semibold text-neutral-900">Novo Hábito</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors">
-            <X size={20} />
-          </button>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Novo hábito"
+      description="Um hábito é um comportamento que você quer repetir — diferente de uma tarefa, que acontece uma vez."
+      size="lg"
+      footer={
+        <>
+          <span className="mr-auto self-center text-xs tabular-nums text-neutral-500">
+            {calculateHabitXp(difficulty)} XP por check-in
+          </span>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button form="create-habit-form" type="submit" disabled={!canSubmit}>
+            Criar
+          </Button>
+        </>
+      }
+    >
+      <form id="create-habit-form" onSubmit={handleSubmit} className="space-y-4">
+        <TextField
+          label="Qual comportamento você quer manter?"
+          required
+          autoFocus
+          placeholder="Ex.: Ler 20 minutos"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+
+        <ChoiceGroup
+          label="Frequência"
+          value={frequency}
+          options={FREQUENCY_OPTIONS}
+          onChange={setFrequency}
+          columns={1}
+        />
+
+        {needsWeekdays && (
+          <div className="space-y-1.5">
+            <span className="block text-sm font-medium text-neutral-700">Dias</span>
+            <div className="flex gap-1.5">
+              {ALL_WEEKDAYS.map((day) => {
+                const selected = weekdays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleWeekday(day)}
+                    className={cn(
+                      'h-11 flex-1 rounded-lg border text-xs font-medium transition-colors',
+                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900',
+                      selected
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300',
+                    )}
+                  >
+                    {WEEKDAY_LABELS[day]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            label="Horário preferido"
+            type="time"
+            hint="Opcional"
+            value={preferredTime}
+            onChange={(event) => setPreferredTime(event.target.value)}
+          />
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-neutral-700">Título</label>
-            <input 
-              type="text" 
-              autoFocus
-              required
-              placeholder="Ex: Ler 20 minutos"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
-            />
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-neutral-700">Frequência</label>
-            <select 
-              value={frequency}
-              onChange={e => setFrequency(e.target.value as HabitFrequency)}
-              className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm"
-            >
-              <option value="daily">Diariamente</option>
-              <option value="weekdays">Dias úteis</option>
-              <option value="weekly">Semanalmente</option>
-            </select>
-          </div>
+        <ChoiceGroup
+          label="Esforço"
+          value={difficulty}
+          options={DIFFICULTY_OPTIONS}
+          onChange={setDifficulty}
+        />
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-neutral-700">Descrição (Opcional)</label>
-            <textarea 
-              rows={2}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Por que este hábito é importante?"
-              className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all sm:text-sm resize-none"
-            />
-          </div>
-
-          <div className="pt-4 flex justify-end gap-3">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm"
-            >
-              Criar Hábito
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <TextAreaField
+          label="Descrição"
+          rows={2}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="Opcional"
+        />
+      </form>
+    </Modal>
   );
 }

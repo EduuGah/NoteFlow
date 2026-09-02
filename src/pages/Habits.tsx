@@ -1,53 +1,58 @@
+/**
+ * Lista de hábitos.
+ *
+ * Hábitos ativos e arquivados são separados: arquivar preserva o histórico nos
+ * relatórios sem manter na tela um hábito que o usuário já abandonou (seção 45).
+ */
+
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
-import { useHabitStore } from '../store/useHabitStore';
+import { Plus, Target } from 'lucide-react';
+import { useActiveHabits } from '../store/useHabitStore';
 import { CreateHabitModal } from '../features/habits/components/CreateHabitModal';
 import { HabitItem } from '../features/habits/components/HabitItem';
+import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
 
 export function Habits() {
-  const habits = useHabitStore(state => state.habits);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const habits = useActiveHabits();
+  const [isCreateOpen, setCreateOpen] = useState(false);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="mx-auto max-w-3xl space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-900">Hábitos</h1>
-          <p className="text-neutral-500 mt-1">Desenvolva consistência diariamente.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Hábitos</h1>
+          <p className="mt-0.5 text-sm text-neutral-500">
+            Comportamentos que você quer repetir, e não tarefas de uma vez só.
+          </p>
         </div>
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-lg text-sm font-medium hover:bg-neutral-800 transition-colors shadow-sm"
-        >
-          <Plus size={16} /> Novo Hábito
-        </button>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus size={16} strokeWidth={2} aria-hidden="true" />
+          Novo hábito
+        </Button>
       </header>
 
-      <div className="space-y-6 mt-8">
-        {habits.length === 0 ? (
-          <div className="text-center py-12 px-4 border-2 border-dashed border-neutral-200 rounded-xl bg-white">
-            <h3 className="text-lg font-medium text-neutral-900 mb-1">Nenhum hábito rastreado</h3>
-            <p className="text-sm text-neutral-500 mb-4">Que tal começar a ler 10 páginas por dia?</p>
-            <button 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="text-sm font-medium text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-4 py-2 rounded-lg transition-colors"
-            >
+      {habits.length === 0 ? (
+        <EmptyState
+          icon={<Target size={32} strokeWidth={1.5} />}
+          title="Nenhum hábito por enquanto"
+          description="Comece com um só. A sequência aparece a partir do segundo dia, e o histórico é o que dá valor ao resto do produto."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={16} strokeWidth={2} aria-hidden="true" />
               Criar primeiro hábito
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {habits.map(habit => (
-              <HabitItem key={habit.id} habit={habit} />
-            ))}
-          </div>
-        )}
-      </div>
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-3">
+          {habits.map((habit) => (
+            <HabitItem key={habit.id} habit={habit} />
+          ))}
+        </div>
+      )}
 
-      <CreateHabitModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
-      />
+      <CreateHabitModal isOpen={isCreateOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }
